@@ -1,6 +1,7 @@
 # Byte-compiled / optimized / DLL files
 urls
 output
+proxy/
 __pycache__/
 *.py[cod]
 
