@@ -1,8 +1,10 @@
+#!/usr/bin/python
 import requests
-from lxml import html
+from lxml import etree
 import base64
 import os
 from collections import defaultdict
+from pprint import pprint
 
 class Counter(object):
     counter = 0
@@ -21,20 +23,16 @@ class Printer(object):
     nodes = []
 
     def __call__(self, element, depth, *args, **kwargs):
-        ret = ""
-        if str(element.tag) == "link":
-            try:
-                ret = element.attrib['href']
-            except:
-                ret=""
-        else:
-            try:
-                ret = element.text
-                ret = shit.encode('ascii', 'ignore')
-            except:
-                ret = ""
-            
-        self.nodes.append(depth * "\t" + str(element.tag) + " " + ret)
+        text = element.text or ""
+
+        try:
+            text = text.encode('ascii', 'ignore')  
+        except:
+            import ipdb; ipdb.set_trace()
+            pass
+
+        ss = "%s%s %s %s" % (depth * "\t", str(element.tag), str(text), str(element.items()))
+        self.nodes.append(ss)
 
     def result(self):
         self.nodes.append("")
@@ -75,24 +73,47 @@ class Proxy(object):
                 f.write(response.content)
             return response.content
 
-# level with maximum number of elements
-class ASD(object): 
+#caching 
+def has_url(element):
+    if "http" in str(element.tag):
+        return True
+    if element.text and "http" in str(element.text.encode('ascii', 'ignore')):
+        return True
+    for child in element.getchildren():  
+        if has_url(child):
+            return True
+    return False
+
+class ASD2(object): 
     def __init__(self):
         self.parents = {}
     def __call__(self, element, depth, parent):
-        if parent not in self.parents:
-            self.parents[parent]=defaultdict(int)
-        if len(element.getchildren()) > 0:
+        if has_url(element):
+            if parent not in self.parents:
+                self.parents[parent]=defaultdict(int)
             self.parents[parent][str(element.tag)]+=1
 
     def result(self):
         partial = []
-        for parent in self.parents.values():
-            if parent:
-                partial.append(max(parent.iteritems(), key=lambda x:x[1]))
-        maximum = max(partial, key = lambda x:x[1]) 
-        return maximum
+        for parent, children in self.parents.iteritems():
+            if children:
+                max_child = max(children.iteritems(), key=lambda x:x[1])
+                partial.append((parent, max_child))
+                          
+        if partial:
+            maximum = max(partial, key = lambda x:x[1][1]) 
+            return maximum
+        return None
 
+class Debug(object): 
+    def __init__(self):
+        self.parents = {}
+    def __call__(self, element, depth, parent):
+        if str(element.tag) == "link":
+            import ipdb; ipdb.set_trace()
+
+def clean(content):
+    return content.strip(" \r\n").replace("&", "&amp;")
 
 def main(): 
     with open("urls", "r") as f:
@@ -100,22 +121,33 @@ def main():
 
     proxy = Proxy()
     with open("output", "w") as f:
-        for url in urls:
-            print url
-            content = proxy.get(url)
-            root = html.document_fromstring(content)
-            asd = ASD()
-            dfs(root, asd)
+        with open("link_output", "w") as flink:
+            for url in urls:
+                content = clean(proxy.get(url))
+                #root = html.document_fromstring(content)
+                try:
+                    root = etree.fromstring(content)
+                except Exception as e:
+                    pass
 
-            line = "%s %s\n"%(str(asd.result()), url)
+                asd = ASD2()
+                dfs(root, asd)
+                result = asd.result()
+                if result: 
+                    line = "%s %s\n"%(str(result), url)
+                    f.write(line)
+                else:
+                    if 0:
+                        debug = Debug()
+                        dfs(root, debug)
 
-            print line
-            f.write(line)
-
-#            printer = Printer() 
-#            dfs(root, printer)
-#            f.write(printer.result())
+                    if 0:
+                        f.write(url+"\n")
+                        printer = Printer() 
+                        dfs(root, printer)
+                        f.write(printer.result())
 
 
 if __name__ == "__main__":
     main()
+    print "done"
